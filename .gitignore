@@ -96,3 +96,5 @@ __pypackages__/
 
 # Logs
 *.log
+
+agents.db
