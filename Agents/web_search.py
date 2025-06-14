@@ -9,4 +9,3 @@ web_search_agent = Agent(
     show_tool_calls=True,
     markdown=True
 )
-
