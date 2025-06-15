@@ -11,7 +11,17 @@ dotenv.load_dotenv()
 
 
 class FileAgentNode:
-    def __init__(self, agent_id="file_agent", db_file="agents.db", table_name="agent_sessions", base_dir: Path = None):
+    def __init__(
+        self, 
+        agent_id="file_agent", 
+        name: str = "File Handler Agent",  # Add this parameter
+        role: str = "File Operations Specialist",
+        db_file="agents.db", 
+        table_name="agent_sessions", 
+        base_dir: Path = None
+    ):
+        self.name = name  # Add this line
+        self.role = role
         # Create SqliteStorage for agent sessions
         self.storage = SqliteStorage(table_name=table_name, db_file=db_file)
         self.agent_id = agent_id

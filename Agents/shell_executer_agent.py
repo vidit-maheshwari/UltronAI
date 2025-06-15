@@ -12,13 +12,16 @@ class ShellAgentNode:
     def __init__(
         self,
         agent_id: str = "default_shell_agent",
+        name: str = "Shell Executor Agent",  # Add this parameter
+        role: str = "System Command Executor",
         db_file: str = "agents.db",
         table_name: str = "multi_agent_memory",
         model_id: str = "deepseek-r1-distill-llama-70b",
         show_tool_calls: bool = True,
         markdown: bool = True,
     ):
-        # Setup persistent storage for agent sessions
+        self.name = name  # Add this line
+        self.role = role
         self.storage = SqlAgentStorage(table_name=table_name, db_file=db_file)
         self.agent_id = agent_id
 
