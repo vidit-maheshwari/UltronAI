@@ -27,10 +27,14 @@ class ExecutorAgentNode:
     def __init__(
         self,
         agent_id: str = "executor_agent",
+        name: str = "Code Executor Agent",  # Add this parameter
+        role: str = "Code Execution and Coordination Specialist",
         db_file: str = "agents.db",
         table_name: str = "executor_sessions",
         base_dir: Path = None,
     ):
+        self.name = name  # Add this line
+        self.role = role
         self.base_dir = base_dir or Path.cwd()
         self.storage = SqliteStorage(table_name=table_name, db_file=db_file)
         self.model = Groq(id="deepseek-r1-distill-llama-70b")

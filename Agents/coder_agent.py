@@ -1,4 +1,3 @@
-# coder_agent.py
 from agno.storage.sqlite import SqliteStorage
 from agno.agent import Agent
 from agno.models.groq import Groq
@@ -12,47 +11,72 @@ from typing import Dict, Any, List, Optional
 
 dotenv.load_dotenv()
 
+
 class CoderAgentNode:
     def __init__(
         self,
         agent_id: str = "coder_agent",
+        name: str = "Coder Agent",  # Add this parameter
         db_file: str = "agents.db",
         table_name: str = "coder_sessions",
+        role: str = "Code Developer and Analyzer",
         base_dir: Path = None
     ):
+        self.name = name  # Add this line
+        self.role = role
         self.storage = SqliteStorage(table_name=table_name, db_file=db_file)
         self.agent_id = agent_id
         self.base_dir = base_dir or Path.cwd()
         self.file_tools = FileTools(base_dir=self.base_dir)
-        
+
+        self.model = Groq(id="deepseek-r1-distill-llama-70b")
+
+        # Register tools
+        self.write_code_file = self._define_write_code_file()
+        self.analyze_code = self._define_analyze_code()
+        self.generate_tests = self._define_generate_tests()
+        self.review_code = self._define_review_code()
+
+        self.agent = Agent(
+            model=self.model,
+            tools=[
+                self.write_code_file,
+                self.analyze_code,
+                self.generate_tests,
+                self.review_code
+            ],
+            storage=self.storage,
+            agent_id=self.agent_id,
+            show_tool_calls=True,
+            markdown=True,
+            instructions=self._instructions()
+        )
+
+    def _define_write_code_file(self):
         @tool(show_result=True)
         def write_code_file(file_name: str, code: str, language: str = "python") -> str:
-            """Write code to a file with proper extension and formatting"""
+            extensions = {
+                "python": ".py", "javascript": ".js", "typescript": ".ts",
+                "java": ".java", "cpp": ".cpp", "c": ".c", "html": ".html",
+                "css": ".css", "sql": ".sql", "shell": ".sh", "json": ".json",
+                "rust": ".rs", "go": ".go", "ruby": ".rb", "php": ".php"
+            }
             try:
-                extensions = {
-                    "python": ".py", "javascript": ".js", "typescript": ".ts",
-                    "java": ".java", "cpp": ".cpp", "c": ".c", "html": ".html",
-                    "css": ".css", "sql": ".sql", "shell": ".sh", "json": ".json",
-                    "rust": ".rs", "go": ".go", "ruby": ".rb", "php": ".php"
-                }
-                
                 if not any(file_name.endswith(ext) for ext in extensions.values()):
                     file_name += extensions.get(language.lower(), ".py")
-                
                 file_path = self.base_dir / file_name
                 file_path.parent.mkdir(parents=True, exist_ok=True)
-                
                 with open(file_path, 'w', encoding='utf-8') as f:
                     f.write(code)
-                
                 return f"✅ Code written to {file_name}"
             except Exception as e:
                 return f"❌ Error: {str(e)}"
+        return write_code_file
 
+    def _define_analyze_code(self):
         @tool(show_result=True)
         def analyze_code(code: str, language: str = "python") -> str:
-            """Analyze code for quality, best practices, and potential issues"""
-            analysis = f"""
+            return f"""
 📊 Code Analysis Report:
 
 1. Code Structure:
@@ -68,36 +92,34 @@ class CoderAgentNode:
 3. Recommendations:
    - Add docstrings if missing
    - Implement error handling
-   - Add type hints for better code clarity
-   - Consider breaking down complex functions
+   - Add type hints
+   - Break down complex functions
 """
-            return analysis
+        return analyze_code
 
+    def _define_generate_tests(self):
         @tool(show_result=True)
         def generate_tests(code: str, language: str = "python") -> str:
-            """Generate unit tests for the provided code"""
-            test_code = f"""
+            return f"""
 # Generated test file for {language} code
 import unittest
 
 class TestGeneratedCode(unittest.TestCase):
     def setUp(self):
-        # Setup code here
         pass
 
     def test_main_functionality(self):
-        # Add test cases here
         pass
 
 if __name__ == '__main__':
     unittest.main()
 """
-            return test_code
+        return generate_tests
 
+    def _define_review_code(self):
         @tool(show_result=True)
         def review_code(code: str, language: str = "python") -> str:
-            """Review code and provide detailed feedback"""
-            review = f"""
+            return f"""
 🔍 Code Review:
 
 1. Code Quality:
@@ -112,107 +134,27 @@ if __name__ == '__main__':
 
 3. Performance:
    - Algorithm Complexity: {'Good' if code.count('for') < 3 else 'Could be optimized'}
-   - Resource Usage: {'Good' if 'open' not in code else 'Consider context managers'}
+   - Resource Usage: {'Good' if 'open' not in code else 'Consider using context managers'}
 
 4. Recommendations:
-   - Add more error handling
-   - Improve documentation
-   - Consider performance optimizations
-   - Add input validation where needed
+   - Improve error handling and input checks
+   - Optimize complex loops
+   - Add inline documentation
 """
-            return review
+        return review_code
 
-        self.write_code_file = write_code_file
-        self.analyze_code = analyze_code
-        self.generate_tests = generate_tests
-        self.review_code = review_code
-        
-        self.model = Groq(id="deepseek-r1-distill-llama-70b")
-        self.agent = Agent(
-            model=self.model,
-            tools=[
-                self.write_code_file,
-                self.analyze_code,
-                self.generate_tests,
-                self.review_code
-            ],
-            storage=self.storage,
-            agent_id=self.agent_id,
-            show_tool_calls=True,
-            markdown=True,
-            instructions="""You are a specialized coding wizard agent in a multi-agent system. Your primary responsibilities are:
+    def _instructions(self):
+        return """You are a specialized coding wizard agent in a multi-agent system. Your primary responsibilities are:
 
-1. Code Generation:
-   - Write clean, well-documented code
-   - Follow language-specific best practices
-   - Implement proper error handling
-   - Use type hints where appropriate
-   - Create modular and maintainable code
+1. Write clean, well-documented code
+2. Analyze and improve existing code
+3. Generate meaningful unit tests
+4. Conduct thorough code reviews
 
-2. Code Analysis:
-   - Analyze code quality and structure
-   - Identify potential issues and bugs
-   - Suggest improvements and optimizations
-   - Check for security vulnerabilities
-   - Verify best practices compliance
-
-3. Testing:
-   - Generate appropriate unit tests
-   - Create test cases for edge cases
-   - Ensure code coverage
-   - Implement integration tests when needed
-
-4. Code Review:
-   - Provide detailed code reviews
-   - Suggest performance improvements
-   - Check for security best practices
-   - Verify documentation quality
-   - Recommend refactoring when needed
-
-When receiving tasks from other agents:
-1. Analyze the requirements carefully
-2. Break down complex tasks into manageable pieces
-3. Generate code with proper documentation
-4. Include error handling and edge cases
-5. Provide analysis and review of the code
-6. Generate appropriate tests
-
-Remember:
-- Focus on code quality and maintainability
-- Follow language-specific conventions
-- Consider security and performance
-- Provide clear documentation
-- Make code reusable and modular
-
-You are part of a larger system where other agents handle:
-- File operations
-- Shell commands
-- Package installation
-- Error resolution
-- Task planning
-
-Your job is to be the coding expert - write the best possible code and let other agents handle the rest."""
-        )
+Focus on correctness, clarity, security, and modularity. Collaborate with other agents for non-code tasks like file ops or planning."""
 
     def run(self, prompt: str, stream: bool = True) -> Dict[str, Any]:
-        """
-        Execute a coding task and return a structured response.
-        
-        Args:
-            prompt (str): The coding task to execute
-            stream (bool): Whether to stream the response
-            
-        Returns:
-            Dict[str, Any]: A structured response containing:
-                - status: 'success' or 'error'
-                - message: The main response message
-                - code: The generated code (if any)
-                - analysis: Code analysis results
-                - tests: Generated tests
-                - review: Code review results
-        """
         try:
-            # Initialize response structure
             response = {
                 "status": "success",
                 "message": "",
@@ -221,27 +163,23 @@ Your job is to be the coding expert - write the best possible code and let other
                 "tests": "",
                 "review": ""
             }
-            
-            # Get the main response from the agent
             main_response = self.agent.print_response(prompt, stream=stream)
             response["message"] = main_response
-            
-            # Extract code if present
+
             if "```" in main_response:
                 code_blocks = main_response.split("```")
                 for i in range(1, len(code_blocks), 2):
                     if code_blocks[i].strip():
                         response["code"] = code_blocks[i].strip()
                         break
-            
-            # If code was generated, analyze and review it
+
             if response["code"]:
                 response["analysis"] = self.analyze_code(response["code"])
                 response["tests"] = self.generate_tests(response["code"])
                 response["review"] = self.review_code(response["code"])
-            
+
             return response
-            
+
         except Exception as e:
             return {
                 "status": "error",
@@ -253,21 +191,7 @@ Your job is to be the coding expert - write the best possible code and let other
             }
 
     def execute_task(self, task: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Execute a structured coding task.
-        
-        Args:
-            task (Dict[str, Any]): A dictionary containing:
-                - type: The type of task ('generate', 'analyze', 'test', 'review')
-                - language: The programming language
-                - requirements: The coding requirements
-                - existing_code: Any existing code to work with
-                
-        Returns:
-            Dict[str, Any]: The structured response from run()
-        """
         try:
-            # Convert task to prompt
             prompt = self._task_to_prompt(task)
             return self.run(prompt)
         except Exception as e:
@@ -281,53 +205,52 @@ Your job is to be the coding expert - write the best possible code and let other
             }
 
     def _task_to_prompt(self, task: Dict[str, Any]) -> str:
-        """Convert a structured task to a natural language prompt."""
         task_type = task.get('type', '')
         language = task.get('language', 'python')
         requirements = task.get('requirements', '')
         existing_code = task.get('existing_code', '')
-        
+
         if task_type == 'generate':
             return f"""Generate {language} code for the following requirements:
 {requirements}
 
 Please include:
-1. Proper documentation
-2. Error handling
-3. Type hints
-4. Best practices
+- Documentation
+- Error handling
+- Type hints
+- Best practices
 """
         elif task_type == 'analyze':
-            return f"""Analyze this {language} code:
+            return f"""Analyze the following {language} code:
 {existing_code}
 
-Please provide:
-1. Code quality assessment
-2. Potential issues
-3. Improvement suggestions
+Provide:
+- Code quality insights
+- Problem areas
+- Optimization suggestions
 """
         elif task_type == 'test':
             return f"""Generate tests for this {language} code:
 {existing_code}
 
-Please include:
-1. Unit tests
-2. Edge cases
-3. Integration tests if needed
+Include:
+- Unit tests
+- Edge cases
+- Integration tests if needed
 """
         elif task_type == 'review':
-            return f"""Review this {language} code:
+            return f"""Perform a review for the following {language} code:
 {existing_code}
 
-Please provide:
-1. Code review
-2. Security assessment
-3. Performance analysis
-4. Best practices check
+Include:
+- Code review
+- Security check
+- Performance suggestions
+- Best practice alignment
 """
-        
-        return json.dumps(task)  # Fallback to JSON representation
-    
+        return json.dumps(task)
 
 
-
+# agent = CoderAgentNode()
+# result = agent.run("Write a FastAPI endpoint for user login with JWT auth")
+# print(result)

@@ -12,7 +12,7 @@ venv/
 ENV/
 env/
 *.env
-*.utron_env
+*.ulton_env
 
 # Installer logs
 pip-log.txt
