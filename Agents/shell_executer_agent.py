@@ -175,6 +175,19 @@ When responding:
         """Get the appropriate command for the given task"""
         task = task.lower()
         
+        # Package management commands
+        if "pip" in task and "list" in task:
+            if "cadquery" in task:
+                return "pip list | grep cadquery"
+            return "pip list"
+        elif "pip" in task and "uninstall" in task:
+            if "cadquery" in task:
+                return "pip uninstall cadquery -y"
+            return task
+        elif "check" in task and "installed" in task and "cadquery" in task:
+            return "pip list | grep cadquery"
+            
+        # Existing command handlers
         if "list" in task and ("file" in task or "directory" in task or "dir" in task):
             if self.platform_info['is_windows']:
                 return "dir"

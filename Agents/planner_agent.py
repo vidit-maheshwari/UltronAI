@@ -36,11 +36,16 @@ class PlannerAgentNode:
             
             Available agents:
             - file_agent: For file operations (read, write, save)
-            - shell_agent: For system commands and execution
+            - shell_agent: For system commands, package management, and execution
             - coder_agent: For writing and modifying code
             - executor_agent: For running code and scripts
             - installer_agent: For package installation
             - web_search_agent: For web research
+            
+            For package management tasks:
+            - Use shell_agent for checking package installation status
+            - Use shell_agent for installing/uninstalling packages
+            - Use installer_agent only for complex installation scenarios
             
             IMPORTANT: You must return ONLY a JSON array of subtasks in this exact format:
             [

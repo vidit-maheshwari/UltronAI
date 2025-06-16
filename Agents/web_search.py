@@ -2,7 +2,7 @@ from agno.agent import Agent
 from agno.models.groq import Groq
 from agno.tools.duckduckgo import DuckDuckGoTools
 from agno.storage.sqlite import SqliteStorage
-from prompt_refiner import PromptRefiner
+from .prompt_refiner import PromptRefiner
 import dotenv
 import os
 from datetime import datetime

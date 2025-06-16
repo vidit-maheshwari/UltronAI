@@ -26,7 +26,7 @@ agents = {
 planner = PlannerAgentNode(agent_id="planner_master")
 
 # Input task
-task = "create a basic landing page for a website for food outlet in india named as pancake house and it should be in html , css , js and it should be responsive and save it"
+task = "check my system information and give me the output in a json format and save it in a file called system_configuration.json"
 
 # Step 1: Plan the task
 subtasks = planner.plan(task)

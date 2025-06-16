@@ -328,5 +328,5 @@ Please provide:
         
         return json.dumps(task)  # Fallback to JSON representation    
 
-coder_agent = CoderAgentNode()
-coder_agent.run("")
+# coder_agent = CoderAgentNode()
+# coder_agent.run("check if cadquery python package is installed in the system if it's there then uninstall it")
