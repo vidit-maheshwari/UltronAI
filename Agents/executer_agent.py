@@ -1,6 +1,7 @@
 from agno.agent import Agent
 from agno.models.groq import Groq
-from agno.storage.sqlite import SqliteStorage
+from agno.storage.sqlite import SqliteStorage as SqlAgentStorage
+from agno.utils.log import log_info
 from pathlib import Path
 from dotenv import load_dotenv
 import signal
@@ -20,6 +21,7 @@ import mimetypes
 from agno.tools import tool
 import shutil
 import json
+from typing import Dict, Any, Optional
 
 load_dotenv()
 
@@ -28,14 +30,14 @@ class ExecutorAgentNode:
         self,
         agent_id: str = "executor_agent",
         db_file: str = "agents.db",
-        table_name: str = "executor_sessions",
-        base_dir: Path = None,
+        table_name: str = "executor_agent_memory",
+        model_name: str = "deepseek-r1-distill-llama-70b",
+        markdown: bool = True,
+        base_dir: Optional[Path] = None
     ):
-        self.base_dir = base_dir or Path.cwd()
-        self.storage = SqliteStorage(table_name=table_name, db_file=db_file)
-        self.model = Groq(id="deepseek-r1-distill-llama-70b")
+        self.storage = SqlAgentStorage(table_name=table_name, db_file=db_file)
         self.agent_id = agent_id
-        self.current_path = self.base_dir
+        self.base_dir = base_dir or Path.cwd()
         self.is_running = True
 
         # Set up signal handlers for graceful shutdown
@@ -47,9 +49,9 @@ class ExecutorAgentNode:
 
         # Initialize specialized agents
         self.file_agent = FileAgentNode(
-            agent_id="file_handler",
+            agent_id=f"{agent_id}_file",
             db_file=db_file,
-            table_name="file_agent_sessions",
+            table_name=f"{table_name}_file",
             base_dir=self.base_dir
         )
         
@@ -64,17 +66,17 @@ class ExecutorAgentNode:
         def rename_file(old_name: str, new_name: str) -> str:
             """Rename a file from old_name to new_name."""
             try:
-                old_path = self.current_path / old_name
-                new_path = self.current_path / new_name
+                old_path = self.base_dir / old_name
+                new_path = self.base_dir / new_name
                 
                 if not old_path.exists():
-                    return f"❌ File {old_name} does not exist in {self.current_path}"
+                    return f"❌ File {old_name} does not exist in {self.base_dir}"
                 
                 if new_path.exists():
-                    return f"❌ File {new_name} already exists in {self.current_path}"
+                    return f"❌ File {new_name} already exists in {self.base_dir}"
                 
                 shutil.move(str(old_path), str(new_path))
-                return f"✅ Successfully renamed {old_name} to {new_name} in {self.current_path}"
+                return f"✅ Successfully renamed {old_name} to {new_name} in {self.base_dir}"
             except Exception as e:
                 return f"❌ Error renaming file: {str(e)}"
 
@@ -82,9 +84,9 @@ class ExecutorAgentNode:
         def execute_file(file_name: str, args: str = "") -> str:
             """Execute any type of file based on its extension and return output."""
             try:
-                file_path = self.current_path / file_name
+                file_path = self.base_dir / file_name
                 if not file_path.exists():
-                    return f"❌ File {file_name} does not exist in {self.current_path}"
+                    return f"❌ File {file_name} does not exist in {self.base_dir}"
 
                 # Get file type
                 mime_type, _ = mimetypes.guess_type(str(file_path))
@@ -105,17 +107,17 @@ class ExecutorAgentNode:
                     # Compile and run Java
                     class_name = file_path.stem
                     compile_cmd = ['javac', str(file_path)]
-                    subprocess.run(compile_cmd, capture_output=True, text=True, cwd=self.current_path)
+                    subprocess.run(compile_cmd, capture_output=True, text=True, cwd=self.base_dir)
                     cmd = ['java', class_name]
                 elif file_extension == '.go':
                     # Build and run Go
                     build_cmd = ['go', 'build', str(file_path)]
-                    subprocess.run(build_cmd, capture_output=True, text=True, cwd=self.current_path)
+                    subprocess.run(build_cmd, capture_output=True, text=True, cwd=self.base_dir)
                     cmd = [f'./{file_path.stem}']
                 elif file_extension == '.rs':
                     # Build and run Rust
                     build_cmd = ['rustc', str(file_path)]
-                    subprocess.run(build_cmd, capture_output=True, text=True, cwd=self.current_path)
+                    subprocess.run(build_cmd, capture_output=True, text=True, cwd=self.base_dir)
                     cmd = [f'./{file_path.stem}']
                 else:
                     # For other file types, try to execute with appropriate program
@@ -130,10 +132,10 @@ class ExecutorAgentNode:
 
                 # Execute the command
                 result = subprocess.run(
-                    cmd, capture_output=True, text=True, timeout=60, cwd=self.current_path
+                    cmd, capture_output=True, text=True, timeout=60, cwd=self.base_dir
                 )
 
-                output = f"📂 Executing in: {self.current_path}\n"
+                output = f"📂 Executing in: {self.base_dir}\n"
                 if result.stdout:
                     output += f"🟢 Output:\n{result.stdout}\n"
                 if result.stderr:
@@ -151,7 +153,7 @@ class ExecutorAgentNode:
             """Execute code directly in the specified language."""
             try:
                 # Create temporary file
-                temp_file = self.current_path / f"temp_execution.{language}"
+                temp_file = self.base_dir / f"temp_execution.{language}"
                 
                 # Write code to file
                 with open(temp_file, 'w') as f:
@@ -172,86 +174,24 @@ class ExecutorAgentNode:
         self.rename_file = rename_file
 
         self.agent = Agent(
-            model=self.model,
-            tools=[
-                self.execute_file,
-                self.execute_code,
-                self.rename_file
-            ],
+            model=Groq(id=model_name),
             storage=self.storage,
             agent_id=self.agent_id,
             show_tool_calls=True,
-            markdown=True,
-            instructions="""
-You are a universal execution agent that coordinates between shell operations and file operations. You can:
-
-1. Shell Operations (via shell_agent):
-   - Navigate directories (cd)
-   - List files and directories (ls)
-   - Execute shell commands
-   - Check current directory (pwd)
-   - Create/remove directories
-   - Run system commands
-
-2. File Operations (via file_agent):
-   - Create new files
-   - Read file contents
-   - Write/modify file contents
-   - Delete files
-   - Rename files (via rename_file tool)
-   - Check file existence
-   - Get file information
-
-3. Code Execution:
-   - Execute Python files
-   - Execute shell scripts
-   - Execute other language files
-   - Run code snippets directly
-
-When handling tasks:
-1. First, analyze the task and break it down into smaller steps
-2. For each step:
-   - Show the current working directory
-   - Execute the operation
-   - Verify the result
-   - Move to the next step
-
-3. For navigation and listing:
-   - Use shell_agent for cd, ls, pwd commands
-   - Always show current directory before and after navigation
-   - Example: "navigate to directory X" or "list files in current directory"
-
-4. For file operations:
-   - Use file_agent for create/read/write/delete
-   - Use rename_file tool specifically for renaming
-   - Always show the full path of files being operated on
-   - Example: "create file X with content Y" or "read file X"
-
-5. For combined operations:
-   - First navigate to correct directory using shell_agent
-   - Then perform file operations using file_agent
-   - Show progress for each step
-   - Example: "go to directory X and create file Y"
-
-IMPORTANT RULES:
-- Always show current directory before operations
-- Break down complex tasks into steps
-- Show progress for each step
-- Use appropriate agent for each operation type
-- Chain operations logically (navigate → list → operate)
-- Provide clear status messages for each step
-- Handle errors gracefully with specific messages
-
-Example workflow:
-1. Show current directory
-2. Navigation: "cd to directory X"
-3. Show new directory
-4. Listing: "list files in current directory"
-5. File operation: "create file Y with content Z"
-6. Verification: "read file Y to confirm content"
-
-Keep responses clear and focused on the current operation.
-"""
+            markdown=markdown,
+            instructions="""You are the Executor Agent in a multi-agent system. Your job is to execute code and scripts.
+            When executing code:
+            1. Always verify the code is safe to run
+            2. Handle any errors gracefully
+            3. Save results to files when needed
+            4. Report execution status and results
+            
+            Available operations:
+            - execute_code: Run Python code
+            - execute_script: Run shell scripts
+            - save_results: Save execution results
+            
+            Always verify the execution environment and handle errors appropriately."""
         )
 
     def _handle_shutdown(self, signum, frame):
@@ -259,7 +199,7 @@ Keep responses clear and focused on the current operation.
         print("\n🛑 Shutting down gracefully...")
         self.is_running = False
         # Clean up any temporary files
-        temp_files = list(self.current_path.glob("temp_execution.*"))
+        temp_files = list(self.base_dir.glob("temp_execution.*"))
         for temp_file in temp_files:
             try:
                 temp_file.unlink()
@@ -313,98 +253,32 @@ Keep responses clear and focused on the current operation.
         
         return steps
 
-    def run(self, prompt: str, stream: bool = True) -> dict:
-        """
-        Execute a task and return a structured response.
-        
-        Args:
-            prompt (str): The task to execute
-            stream (bool): Whether to stream the response
-            
-        Returns:
-            dict: A structured response containing:
-                - status: 'success' or 'error'
-                - message: The main response message
-                - details: Additional details or error information
-                - tool_outputs: Outputs from any tools used
-        """
+    def run(self, prompt: str) -> Dict[str, Any]:
+        """Execute code or script based on the prompt."""
         try:
-            # Initialize response structure
-            response = {
+            # Get response from the agent
+            response = self.agent.run(prompt)
+            
+            # Extract content from response
+            content = str(response)
+            
+            # Check if this is a save operation
+            if "save" in prompt.lower() and "file" in prompt.lower():
+                # Use file agent to save the content
+                return self.file_agent.run(prompt)
+            
+            return {
                 "status": "success",
-                "message": "",
-                "details": {},
-                "tool_outputs": {}
+                "message": "Operation completed",
+                "content": content
             }
             
-            # Analyze task and break it down
-            steps = self._analyze_task(prompt)
-            if not steps:
-                return {
-                    "status": "error",
-                    "message": "❌ Could not analyze task into steps",
-                    "details": {"error_type": "TaskAnalysisError"},
-                    "tool_outputs": {}
-                }
-            
-            # Execute each step
-            for i, step in enumerate(steps, 1):
-                if not self.is_running:
-                    return {
-                        "status": "interrupted",
-                        "message": "🛑 Task interrupted by user",
-                        "details": {"step": i, "total_steps": len(steps)},
-                        "tool_outputs": response["tool_outputs"]
-                    }
-                
-                # Show current directory
-                current_dir_msg = f"\n📂 Current directory: {self.current_path}\n"
-                response["message"] += current_dir_msg
-                
-                # Execute step based on type
-                if step['type'] == 'shell':
-                    if step['action'] == 'navigate':
-                        shell_response = self.shell_agent.run(prompt, stream=stream)
-                        if shell_response:
-                            # Update current path if navigation was successful
-                            if 'cd' in shell_response.lower():
-                                try:
-                                    new_path = shell_response.split('cd')[1].strip()
-                                    self.current_path = Path(new_path).resolve()
-                                except:
-                                    pass
-                            response["tool_outputs"][f"step_{i}"] = shell_response
-                            response["message"] += f"\nStep {i}: {step['description']}\n{shell_response}\n"
-                    elif step['action'] == 'list':
-                        shell_response = self.shell_agent.run("ls", stream=stream)
-                        if shell_response:
-                            response["tool_outputs"][f"step_{i}"] = shell_response
-                            response["message"] += f"\nStep {i}: {step['description']}\n{shell_response}\n"
-                
-                elif step['type'] == 'file':
-                    if step['action'] == 'rename':
-                        main_response = self.agent.print_response(prompt, stream=stream)
-                        if main_response:
-                            response["message"] += f"\nStep {i}: {step['description']}\n{main_response}\n"
-                    else:
-                        file_response = self.file_agent.run(prompt, stream=stream)
-                        if file_response:
-                            response["tool_outputs"][f"step_{i}"] = file_response
-                            response["message"] += f"\nStep {i}: {step['description']}\n{file_response}\n"
-                
-                elif step['type'] == 'code':
-                    main_response = self.agent.print_response(prompt, stream=stream)
-                    if main_response:
-                        response["message"] += f"\nStep {i}: {step['description']}\n{main_response}\n"
-            
-            return response
-            
         except Exception as e:
+            log_info(f"Error in run method: {str(e)}")
             return {
                 "status": "error",
-                "message": f"Error executing task: {str(e)}",
-                "details": {"error_type": type(e).__name__},
-                "tool_outputs": {}
+                "message": f"Error: {str(e)}",
+                "content": ""
             }
 
     def execute_task(self, task: dict) -> dict:

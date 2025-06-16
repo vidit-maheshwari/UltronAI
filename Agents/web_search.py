@@ -1,29 +1,8 @@
-# # Agents/web_search_agent.py
-
-# from agno.agent import Agent
-# from agno.models.groq import Groq
-# from agno.tools.duckduckgo import DuckDuckGoTools
-# import dotenv
-# import os
-
-# dotenv.load_dotenv()
-
-# agent = Agent(
-#     model=Groq(id="deepseek-r1-distill-llama-70b"),
-#     tools=[DuckDuckGoTools()],
-#     show_tool_calls=True,
-#     markdown=True,
-# )
-
-# agent.print_response("Search for top 5 movies in India by box office collection", stream=False)
-
-# Agents/web_search_agent.py
-
 from agno.agent import Agent
 from agno.models.groq import Groq
 from agno.tools.duckduckgo import DuckDuckGoTools
 from agno.storage.sqlite import SqliteStorage
-from prompt_refiner import PromptRefiner
+# from prompt_refiner import PromptRefiner
 import dotenv
 import os
 
@@ -60,12 +39,12 @@ class WebSearchAgentNode:
 
 # ✅ Example Run
 if __name__ == "__main__":
-    refiner = PromptRefiner()
+    # refiner = PromptRefiner()
     web_search_agent = WebSearchAgentNode()
 
     user_input = "can u give me the gdp of all state in india"
-    refined = refiner.refine(user_input)
-    web_search_agent.run(refined)
+    # refined = refiner.refine(user_input)
+    web_search_agent.run(user_input)
 
 
 # from agno.agent import Agent

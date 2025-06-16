@@ -326,8 +326,7 @@ Please provide:
 4. Best practices check
 """
         
-        return json.dumps(task)  # Fallback to JSON representation
-    
+        return json.dumps(task)  # Fallback to JSON representation    
 
-
-
+coder_agent = CoderAgentNode()
+coder_agent.run("")
