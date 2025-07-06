@@ -1,144 +1,96 @@
-from agno.agent import Agent
-from agno.models.groq import Groq
-from agno.storage.sqlite import SqliteStorage as SqlAgentStorage
+# Agents/file_handler_agent.py
+
 from agno.utils.log import log_info
 from pathlib import Path
 import dotenv
-import os
-import json
+from typing import Dict, Any
 import re
-from typing import Dict, Any, Optional
+from shared_state import SharedState
 
 dotenv.load_dotenv()
 
-
 class FileAgentNode:
-    def __init__(
-        self,
-        agent_id: str = "file_agent",
-        db_file: str = "agents.db",
-        table_name: str = "file_agent_memory",
-        model_name: str = "deepseek-r1-distill-llama-70b",
-        markdown: bool = True,
-        base_dir: Optional[Path] = None
-    ):
-        self.storage = SqlAgentStorage(table_name=table_name, db_file=db_file)
-        self.agent_id = agent_id
-        self.base_dir = base_dir or Path.cwd()
+    """
+    A deterministic file operations node. It does not use an LLM.
+    It executes specific file tasks based on a simple command language.
+    """
+    def __init__(self):
+        log_info("Initialized deterministic FileAgentNode.")
 
-        self.agent = Agent(
-            model=Groq(id=model_name),
-            storage=self.storage,
-            agent_id=self.agent_id,
-            show_tool_calls=True,
-            markdown=markdown,
-            instructions="""You are the File Agent in a multi-agent system. Your job is to handle file operations.
-            When saving files:
-            1. Always extract the actual content from the input
-            2. Remove any markdown formatting or tool call syntax
-            3. Save the clean content to the specified file
-            4. Verify the file was saved correctly
-            
-            Available operations:
-            - save_file: Save content to a file
-            - read_file: Read content from a file
-            - list_files: List files in a directory
-            
-            Always verify the content before saving and after reading."""
-        )
-
-    def _extract_content(self, text: str) -> str:
-        """Extract clean content from text, removing any formatting or tool calls."""
-        # Remove tool call syntax
-        text = re.sub(r'<tool_call>.*?</tool_call>', '', text, flags=re.DOTALL)
-        
-        # Remove markdown formatting
-        text = re.sub(r'```.*?```', '', text, flags=re.DOTALL)
-        
-        # Remove any remaining XML-like tags
-        text = re.sub(r'<.*?>', '', text)
-        
-        # Remove multiple newlines
-        text = re.sub(r'\n\s*\n', '\n\n', text)
-        
-        return text.strip()
-
-    def _save_file(self, content: str, file_name: str, overwrite: bool = False) -> bool:
-        """Save content to a file."""
+    def _create_project_directory(self, shared_state: 'SharedState') -> Dict[str, Any]:
         try:
-            # Clean the content
-            content = self._extract_content(content)
+            original_task = shared_state.original_task.lower()
+            words = [word for word in original_task.split() if word.isalnum()]
+            project_name = "-".join(words[:3]) if words else "new-project"
             
-            # Ensure the file has an extension
-            if not any(file_name.endswith(ext) for ext in ['.txt', '.md', '.json', '.py', '.csv']):
-                file_name += '.txt'
-            
-            # Create the file path relative to base_dir
-            file_path = self.base_dir / file_name
-            
-            # Check if file exists and handle overwrite
-            if file_path.exists() and not overwrite:
-                log_info(f"File {file_name} already exists and overwrite is False")
-                return False
-            
-            # Create parent directories if they don't exist
-            file_path.parent.mkdir(parents=True, exist_ok=True)
-            
-            # Write the content
-            with open(file_path, 'w', encoding='utf-8') as f:
-                f.write(content)
-            
-            log_info(f"Successfully saved content to {file_path}")
-            return True
-            
-        except Exception as e:
-            log_info(f"Error saving file {file_name}: {str(e)}")
-            return False
+            base_projects_dir = Path.cwd() / "projects"
+            base_projects_dir.mkdir(exist_ok=True)
 
-    def run(self, prompt: str) -> Dict[str, Any]:
-        """Execute a file operation based on the prompt."""
-        try:
-            # Get response from the agent
-            response = self.agent.run(prompt)
+            project_dir = base_projects_dir / project_name
+            project_dir.mkdir(exist_ok=True)
             
-            # Extract content from response
-            content = self._extract_content(str(response))
-            
-            # Check if this is a save operation
-            if "save" in prompt.lower() and "file" in prompt.lower():
-                # Extract filename from prompt
-                file_name = None
-                if "as" in prompt.lower():
-                    file_name = prompt.lower().split("as")[-1].strip()
-                elif "named" in prompt.lower():
-                    file_name = prompt.lower().split("named")[-1].strip()
-                
-                if file_name:
-                    # Remove any quotes or extra words
-                    file_name = file_name.strip('"\' .')
-                    success = self._save_file(content, file_name, overwrite=True)
-                    return {
-                        "status": "success" if success else "error",
-                        "message": f"File saved as {file_name}" if success else f"Failed to save file {file_name}",
-                        "content": content
-                    }
+            log_info(f"Project directory created at: {project_dir}")
             
             return {
                 "status": "success",
-                "message": "Operation completed",
-                "content": content
+                "output": f"Project directory '{project_name}' created.",
+                "project_directory": project_dir,
             }
-            
         except Exception as e:
-            log_info(f"Error in run method: {str(e)}")
+            log_info(f"Error creating project directory: {e}")
+            return {"status": "error", "error": str(e)}
+
+    def _write_file(self, command: str, shared_state: 'SharedState') -> Dict[str, Any]:
+        try:
+            # Parse filename from a command like "SAVE CODE TO 'index.html'" or "CREATE EMPTY FILE 'index.html'"
+            file_name_match = re.search(r"['\"]([\w\.\-]+)['\"]", command)
+            if not file_name_match:
+                return {"status": "error", "error": "Malformed write command. Could not find filename."}
+            file_name = file_name_match.group(1)
+
+            # If saving code, get it from state; otherwise, it's an empty file.
+            code_to_write = shared_state.generated_code.get(file_name, "")
+            if not code_to_write and "SAVE CODE" in command.upper():
+                 log_info(f"Warning: No code found for '{file_name}' during SAVE operation.")
+
+            if not shared_state.project_directory:
+                # If no project directory, create one in the CWD
+                project_dir = Path.cwd() / "projects" / "default-project"
+                project_dir.mkdir(parents=True, exist_ok=True)
+                shared_state.set_project_directory(project_dir)
+                log_info(f"Project directory was not set, created default at {project_dir}")
+
+            file_path = shared_state.project_directory / file_name
+            file_path.parent.mkdir(parents=True, exist_ok=True)
+
+            with open(file_path, 'w', encoding='utf-8') as f:
+                f.write(code_to_write)
+
+            log_info(f"Successfully wrote {len(code_to_write)} characters to {file_path}")
             return {
-                "status": "error",
-                "message": f"Error: {str(e)}",
-                "content": ""
+                "status": "success",
+                "output": f"File '{file_name}' saved successfully.",
+                "created_files": [str(file_path)]
             }
+        except Exception as e:
+            log_info(f"Error saving file: {e}")
+            return {"status": "error", "error": str(e)}
 
-# Usage
-# node = FileAgentNode(base_dir=Path("/tmp"))
-# print(node.run("Save the text 'Hello World' to a file named example.txt"))
+    def run(self, command: str, shared_state: 'SharedState') -> Dict[str, Any]:
+        """A simple router that calls the correct internal method based on our command language."""
+        command_upper = command.strip().upper()
+        try:
+            if command_upper == "CREATE PROJECT STRUCTURE":
+                log_info("File agent routing to: _create_project_directory")
+                return self._create_project_directory(shared_state)
+            
+            elif command_upper.startswith("SAVE CODE TO") or command_upper.startswith("CREATE EMPTY FILE"):
+                log_info(f"File agent routing to: _write_file for command: {command}")
+                return self._write_file(command, shared_state)
 
-
+            else:
+                log_info(f"File agent received unhandled command: {command}")
+                return {"status": "error", "error": f"File agent does not support the command: '{command}'"}
+        except Exception as e:
+            log_info(f"A critical error occurred in the FileAgentNode run method: {e}")
+            return {"status": "error", "error": str(e)}

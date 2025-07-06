@@ -1,101 +1,100 @@
-# error_resolver_agent.py
-from agno.storage.sqlite import SqliteStorage
+# Agents/error_resolver.py
+
 from agno.agent import Agent
 from agno.models.groq import Groq
-from agno.tools import tool
+from agno.storage.sqlite import SqliteStorage
+from agno.utils.log import log_info
 import dotenv
+import json
 import re
+from typing import Dict, Any, List
+from shared_state import SharedState  # Import SharedState from shared_state.py
 
 dotenv.load_dotenv()
 
+
 class ErrorResolverAgentNode:
-    def __init__(self, agent_id="error_resolver_agent", db_file="agents.db", table_name="error_resolver_sessions"):
+    def __init__(
+        self,
+        agent_id: str = "error_resolver_agent",
+        db_file: str = "agents.db",
+        table_name: str = "error_resolver_sessions",
+    ):
         self.storage = SqliteStorage(table_name=table_name, db_file=db_file)
         self.agent_id = agent_id
-        
-        @tool(show_result=True)
-        def analyze_error(error_message: str, file_name: str = None) -> str:
-            """Analyze error message and provide resolution steps"""
-            try:
-                analysis = f"""
-🔍 Error Analysis:
-Error: {error_message}
-File: {file_name or 'Unknown'}
 
-Common causes and solutions:
-"""
-                # Common error patterns
-                if "ModuleNotFoundError" in error_message or "ImportError" in error_message:
-                    module_match = re.search(r"No module named '([^']+)'", error_message)
-                    if module_match:
-                        module = module_match.group(1)
-                        analysis += f"- Missing package '{module}' - needs installation\n"
-                
-                elif "SyntaxError" in error_message:
-                    analysis += "- Code syntax issue - needs code review and fixing\n"
-                
-                elif "FileNotFoundError" in error_message:
-                    analysis += "- File or directory missing - check file paths\n"
-                
-                elif "PermissionError" in error_message:
-                    analysis += "- Permission issue - check file/directory permissions\n"
-                
-                else:
-                    analysis += "- General runtime error - needs code debugging\n"
-                
-                return analysis
-            except Exception as e:
-                return f"❌ Error analyzing error: {str(e)}"
-        
-#         @tool(show_result=True)
-#         def create_fix_plan(error_analysis: str, task_context: str) -> str:
-#             """Create a step-by-step plan to fix the error"""
-#             try:
-#                 plan = f"""
-# 🛠️ Fix Plan:
-# Context: {task_context}
-# Analysis: {error_analysis}
-
-# Recommended steps:
-# 1. Identify the root cause
-# 2. Determine which agent should handle the fix
-# 3. Execute the fix
-# 4. Test the solution
-# 5. Verify the issue is resolved
-
-# Next actions:
-# """
-#                 if "needs installation" in error_analysis:
-#                     plan += "- Use installer_agent to install missing packages\n"
-#                 if "needs code review" in error_analysis:
-#                     plan += "- Use coder_agent to fix code issues\n"
-#                 if "check file paths" in error_analysis:
-#                     plan += "- Use file_agent to verify file structure\n"
-                
-#                 return plan
-#             except Exception as e:
-#                 return f"❌ Error creating fix plan: {str(e)}"
-        
-        self.analyze_error = analyze_error
-        # self.create_fix_plan = create_fix_plan
-        
-        self.model = Groq(id="deepseek-r1-distill-llama-70b")
         self.agent = Agent(
-            model=self.model,
-           tools=[self.analyze_error],
+            model=Groq(id="deepseek-r1-distill-llama-70b"),
             storage=self.storage,
             agent_id=self.agent_id,
-            show_tool_calls=True,
-            markdown=True,
-            instructions="""You are an error resolution agent. Your job is ONLY to:
-1. Analyze error messages and exceptions
-2. Identify root causes of problems
-3. Create step-by-step fix plans
-4. Recommend which agent should handle each fix
+            show_tool_calls=False,
+            instructions="""You are an expert AI Error Resolution Specialist. Your job is to analyze a failed task
+            and create a new JSON array plan to fix the error, using a strict "Command Language".
 
-Do NOT fix errors directly - other agents handle the actual fixes.
-Focus only on analysis and planning the resolution strategy."""
+            **Command Language Reference:**
+            - `{"agent": "file_agent", "description": "CREATE EMPTY FILE 'filename.ext'"}`
+            - `{"agent": "shell_agent", "description": "mkdir -p directory_name"}`
+            - `{"agent": "shell_agent", "description": "executable_command_string"}`
+            - `{"agent": "coder_agent", "description": "Generate code for 'filename.ext' that..."}`
+            - `{"agent": "file_agent", "description": "SAVE CODE TO 'filename.ext'"}`
+
+            **Analysis Logic:**
+            - If a shell command like `wget` or `brew` fails with "command not found", check the OS and suggest an alternative (e.g., use `curl` instead of `wget`).
+            - If a file operation fails because a directory doesn't exist, use the `shell_agent` with `mkdir -p` to create it.
+            - If a command fails due to permissions, do not attempt to change permissions. Instead, create a plan with the agent `human_intervention` and describe the problem clearly.
+
+            Your output MUST be ONLY a valid JSON array of subtasks. No other text.
+            """
         )
-    
-    def run(self, prompt: str, stream: bool = True) -> str:
-        return self.agent.print_response(prompt, stream=stream)
+
+    def _parse_fix_plan_from_response(self, response: str) -> List[Dict[str, Any]]:
+        """Parses a JSON array of subtasks from the LLM's response."""
+        try:
+            match = re.search(r'\[\s*\{[\s\S]*?\}\s*\]', response, re.DOTALL)
+            if match:
+                return json.loads(match.group(0))
+            return []
+        except Exception as e:
+            log_info(f"Error parsing fix plan: {e}")
+            return []
+
+    def run(self, shared_state: 'SharedState') -> List[Dict[str, Any]]:
+        """
+        Analyzes an error from the shared state and returns a new plan to fix it.
+        """
+        
+        error_context_prompt = f"""
+        An error has occurred. Analyze the situation and create a new plan to resolve it.
+
+        **Error Context:**
+        - **Original Task:** {shared_state.original_task}
+        - **Last Error Message:** {shared_state.last_execution_error}
+        - **Last Output:** {shared_state.last_execution_output}
+        - **Project Directory:** {shared_state.project_directory}
+        - **History (last 5 actions):**
+        {"\n".join([f"  - {h}" for h in shared_state.history[-5:]])}
+
+        **Your Task:**
+        Based on the error, create a new plan as a JSON array to fix the problem.
+        Return ONLY the JSON array.
+        """
+
+        try:
+            log_info("Error Resolver Agent is creating a fix plan...")
+            response = self.agent.run(error_context_prompt)
+            
+            # --- THIS IS THE FIX ---
+            content = response.content if hasattr(response, 'content') else str(response)
+
+            fix_plan = self._parse_fix_plan_from_response(content)
+
+            if not fix_plan:
+                log_info("Error resolver failed to generate a valid fix plan.")
+                return [{"agent": "human_intervention", "description": "Automatic error resolution failed. Please review the state."}]
+            
+            log_info(f"Error resolver created a new plan with {len(fix_plan)} steps.")
+            return fix_plan
+
+        except Exception as e:
+            log_info(f"A critical error occurred in the ErrorResolverAgentNode: {e}")
+            return [{"agent": "human_intervention", "description": f"Critical failure in error resolver: {e}"}]

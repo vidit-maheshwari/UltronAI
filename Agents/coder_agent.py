@@ -1,332 +1,146 @@
-# coder_agent.py
-from agno.storage.sqlite import SqliteStorage
+# Agents/coder_agent.py
+
 from agno.agent import Agent
 from agno.models.groq import Groq
-from agno.tools.file import FileTools
-from agno.tools import tool
-from pathlib import Path
+from agno.storage.sqlite import SqliteStorage
+from agno.utils.log import log_info
 import dotenv
-import os
-import json
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any
+import re
+from shared_state import SharedState  # Import SharedState
 
 dotenv.load_dotenv()
 
 class CoderAgentNode:
+    """
+    An advanced, robust coding agent that uses an internal multi-persona
+    workflow (Draft -> Review -> Refactor) to produce high-quality code.
+    """
     def __init__(
         self,
         agent_id: str = "coder_agent",
         db_file: str = "agents.db",
         table_name: str = "coder_sessions",
-        base_dir: Path = None
     ):
         self.storage = SqliteStorage(table_name=table_name, db_file=db_file)
         self.agent_id = agent_id
-        self.base_dir = base_dir or Path.cwd()
-        self.file_tools = FileTools(base_dir=self.base_dir)
-        
-        @tool(show_result=True)
-        def write_code_file(file_name: str, code: str, language: str = "python") -> str:
-            """Write code to a file with proper extension and formatting"""
-            try:
-                extensions = {
-                    "python": ".py", "javascript": ".js", "typescript": ".ts",
-                    "java": ".java", "cpp": ".cpp", "c": ".c", "html": ".html",
-                    "css": ".css", "sql": ".sql", "shell": ".sh", "json": ".json",
-                    "rust": ".rs", "go": ".go", "ruby": ".rb", "php": ".php"
-                }
-                
-                if not any(file_name.endswith(ext) for ext in extensions.values()):
-                    file_name += extensions.get(language.lower(), ".py")
-                
-                file_path = self.base_dir / file_name
-                file_path.parent.mkdir(parents=True, exist_ok=True)
-                
-                with open(file_path, 'w', encoding='utf-8') as f:
-                    f.write(code)
-                
-                return f"✅ Code written to {file_name}"
-            except Exception as e:
-                return f"❌ Error: {str(e)}"
 
-        @tool(show_result=True)
-        def analyze_code(code: str, language: str = "python") -> str:
-            """Analyze code for quality, best practices, and potential issues"""
-            analysis = f"""
-📊 Code Analysis Report:
-
-1. Code Structure:
-   - Language: {language}
-   - Lines of code: {len(code.splitlines())}
-   - Complexity: {'High' if code.count('if') + code.count('for') + code.count('while') > 10 else 'Low'}
-
-2. Best Practices Check:
-   - Documentation: {'✅' if '"""' in code or "'''" in code else '❌'}
-   - Error Handling: {'✅' if 'try' in code and 'except' in code else '❌'}
-   - Type Hints: {'✅' if ': ' in code and '->' in code else '❌'}
-
-3. Recommendations:
-   - Add docstrings if missing
-   - Implement error handling
-   - Add type hints for better code clarity
-   - Consider breaking down complex functions
-"""
-            return analysis
-
-        @tool(show_result=True)
-        def generate_tests(code: str, language: str = "python") -> str:
-            """Generate unit tests for the provided code"""
-            test_code = f"""
-# Generated test file for {language} code
-import unittest
-
-class TestGeneratedCode(unittest.TestCase):
-    def setUp(self):
-        # Setup code here
-        pass
-
-    def test_main_functionality(self):
-        # Add test cases here
-        pass
-
-if __name__ == '__main__':
-    unittest.main()
-"""
-            return test_code
-
-        @tool(show_result=True)
-        def review_code(code: str, language: str = "python") -> str:
-            """Review code and provide detailed feedback"""
-            review = f"""
-🔍 Code Review:
-
-1. Code Quality:
-   - Readability: {'Good' if len(code.splitlines()) < 50 else 'Could be improved'}
-   - Maintainability: {'Good' if code.count('def') < 5 else 'Consider refactoring'}
-   - Documentation: {'Good' if '"""' in code else 'Needs improvement'}
-
-2. Security:
-   - Input Validation: {'✅' if 'input' in code and 'validate' in code else '❌'}
-   - Error Handling: {'✅' if 'try' in code else '❌'}
-   - Data Sanitization: {'✅' if 'sanitize' in code else '❌'}
-
-3. Performance:
-   - Algorithm Complexity: {'Good' if code.count('for') < 3 else 'Could be optimized'}
-   - Resource Usage: {'Good' if 'open' not in code else 'Consider context managers'}
-
-4. Recommendations:
-   - Add more error handling
-   - Improve documentation
-   - Consider performance optimizations
-   - Add input validation where needed
-"""
-            return review
-
-        self.write_code_file = write_code_file
-        self.analyze_code = analyze_code
-        self.generate_tests = generate_tests
-        self.review_code = review_code
-        
-        self.model = Groq(id="deepseek-r1-distill-llama-70b")
-        self.agent = Agent(
-            model=self.model,
-            tools=[
-                self.write_code_file,
-                self.analyze_code,
-                self.generate_tests,
-                self.review_code
-            ],
-            storage=self.storage,
-            agent_id=self.agent_id,
-            show_tool_calls=True,
-            markdown=True,
-            instructions="""You are a specialized coding wizard agent in a multi-agent system. Your primary responsibilities are:
-
-1. Code Generation:
-   - Write clean, well-documented code
-   - Follow language-specific best practices
-   - Implement proper error handling
-   - Use type hints where appropriate
-   - Create modular and maintainable code
-
-2. Code Analysis:
-   - Analyze code quality and structure
-   - Identify potential issues and bugs
-   - Suggest improvements and optimizations
-   - Check for security vulnerabilities
-   - Verify best practices compliance
-
-3. Testing:
-   - Generate appropriate unit tests
-   - Create test cases for edge cases
-   - Ensure code coverage
-   - Implement integration tests when needed
-
-4. Code Review:
-   - Provide detailed code reviews
-   - Suggest performance improvements
-   - Check for security best practices
-   - Verify documentation quality
-   - Recommend refactoring when needed
-
-When receiving tasks from other agents:
-1. Analyze the requirements carefully
-2. Break down complex tasks into manageable pieces
-3. Generate code with proper documentation
-4. Include error handling and edge cases
-5. Provide analysis and review of the code
-6. Generate appropriate tests
-
-Remember:
-- Focus on code quality and maintainability
-- Follow language-specific conventions
-- Consider security and performance
-- Provide clear documentation
-- Make code reusable and modular
-
-You are part of a larger system where other agents handle:
-- File operations
-- Shell commands
-- Package installation
-- Error resolution
-- Task planning
-
-Your job is to be the coding expert - write the best possible code and let other agents handle the rest."""
+        self.drafting_agent = Agent(
+            model=Groq(id="deepseek-r1-distill-llama-70b"),
+            instructions="You are a senior developer focused on rapid prototyping. You write functional code to meet the user's request. Your output MUST be ONLY the raw code, wrapped in <<START_CODE>> and <<END_CODE>> markers. Do not add any explanations or thoughts."
         )
 
-    def run(self, prompt: str, stream: bool = True) -> Dict[str, Any]:
-        """
-        Execute a coding task and return a structured response.
-        
-        Args:
-            prompt (str): The coding task to execute
-            stream (bool): Whether to stream the response
-            
-        Returns:
-            Dict[str, Any]: A structured response containing:
-                - status: 'success' or 'error'
-                - message: The main response message
-                - code: The generated code (if any)
-                - analysis: Code analysis results
-                - tests: Generated tests
-                - review: Code review results
-        """
-        try:
-            # Initialize response structure
-            response = {
-                "status": "success",
-                "message": "",
-                "code": "",
-                "analysis": "",
-                "tests": "",
-                "review": ""
-            }
-            
-            # Get the main response from the agent
-            main_response = self.agent.print_response(prompt, stream=stream)
-            response["message"] = main_response
-            
-            # Extract code if present
-            if "```" in main_response:
-                code_blocks = main_response.split("```")
-                for i in range(1, len(code_blocks), 2):
-                    if code_blocks[i].strip():
-                        response["code"] = code_blocks[i].strip()
-                        break
-            
-            # If code was generated, analyze and review it
-            if response["code"]:
-                response["analysis"] = self.analyze_code(response["code"])
-                response["tests"] = self.generate_tests(response["code"])
-                response["review"] = self.review_code(response["code"])
-            
-            return response
-            
-        except Exception as e:
-            return {
-                "status": "error",
-                "message": f"Error executing coding task: {str(e)}",
-                "code": "",
-                "analysis": "",
-                "tests": "",
-                "review": ""
-            }
+        self.reviewing_agent = Agent(
+            model=Groq(id="deepseek-r1-distill-llama-70b"),
+            instructions="You are a meticulous code reviewer. Analyze the provided code for bugs, security vulnerabilities, and deviations from best practices. Provide a concise, bulleted list of necessary improvements. If the code is perfect, simply respond with 'No issues found.'"
+        )
 
-    def execute_task(self, task: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Execute a structured coding task.
+        self.refactoring_agent = Agent(
+            model=Groq(id="deepseek-r1-distill-llama-70b"),
+            instructions="You are a senior software architect specializing in clean code. Rewrite the provided code draft to incorporate the reviewer's feedback. Your goal is to produce a final version that is efficient, readable, and robust. Output ONLY the final, raw code, wrapped in <<START_CODE>> and <<END_CODE>> markers."
+        )
+
+    def _extract_code(self, raw_content: str) -> str:
+        """A robust method to extract code from the special markers."""
+        start_marker = "<<START_CODE>>"
+        end_marker = "<<END_CODE>>"
         
-        Args:
-            task (Dict[str, Any]): A dictionary containing:
-                - type: The type of task ('generate', 'analyze', 'test', 'review')
-                - language: The programming language
-                - requirements: The coding requirements
-                - existing_code: Any existing code to work with
+        start_index = raw_content.find(start_marker)
+        end_index = raw_content.find(end_marker)
+
+        if start_index != -1 and end_index != -1:
+            code = raw_content[start_index + len(start_marker):end_index].strip()
+            log_info(f"Successfully extracted code using markers. Length: {len(code)}")
+            return code
+        
+        log_info("Warning: Could not find code markers. Returning raw content as a fallback.")
+        return raw_content.strip()
+
+    def run(self, prompt: str, shared_state: 'SharedState') -> Dict[str, Any]:
+        """Executes a robust, multi-step coding process."""
+        try:
+            filename_match = re.search(r"for\s*['\"]?([\w\.\-]+)['\"]?", prompt)
+            filename = filename_match.group(1) if filename_match else "unknown_file.txt"
+
+            # === THIS IS THE FIX: Construct the full, detailed prompt first ===
+            contextual_prompt = f"""
+            Based on the following project context, please write the required code for the file: `{filename}`
+
+            **Project Context:**
+            - **Original Task:** {shared_state.original_task}
+            - **Project Directory:** {shared_state.project_directory}
+
+            **Current Coding Task:**
+            {prompt}
+            """
+
+            if filename.endswith(".html"):
+                contextual_prompt += """
+                ---
+                **CRITICAL HTML STRUCTURE REQUIREMENTS:**
+                Your response MUST be a complete HTML5 document. It MUST include:
+                - A `<!DOCTYPE html>` declaration.
+                - An `<html>` tag with the `lang="en"` attribute.
+                - A `<head>` section containing:
+                  - `<meta charset="UTF-8">`
+                  - `<meta name="viewport" content="width=device-width, initial-scale=1.0">`
+                  - A relevant `<title>`.
+                  - A `<link rel="stylesheet" href="styles.css">` tag to link the stylesheet.
+                - A `<body>` section containing the main content.
+                - A `<script src="script.js"></script>` tag right before the closing `</body>` tag.
                 
-        Returns:
-            Dict[str, Any]: The structured response from run()
-        """
-        try:
-            # Convert task to prompt
-            prompt = self._task_to_prompt(task)
-            return self.run(prompt)
-        except Exception as e:
+                Remember to wrap your final code in the special markers.
+                """
+            
+            # === STEP 1: DRAFTING ===
+            log_info(f"Step 1: Drafting initial code for '{filename}'...")
+            # Use the full contextual_prompt here
+            draft_response = self.drafting_agent.run(contextual_prompt)
+            initial_code = self._extract_code(draft_response.content)
+            if not initial_code:
+                raise ValueError("Drafting agent failed to produce code.")
+            log_info("Drafting complete.")
+
+            # === STEP 2: REVIEWING ===
+            log_info("Step 2: Reviewing drafted code...")
+            review_prompt = f"Please review the following code for the file '{filename}':\n\n{initial_code}"
+            review_feedback = self.reviewing_agent.run(review_prompt).content
+            log_info(f"Review feedback: {review_feedback}")
+
+            # === STEP 3: REFACTORING ===
+            if "No issues found" in review_feedback:
+                log_info("Step 3: No issues found. Skipping refactoring.")
+                final_code = initial_code
+            else:
+                log_info("Step 3: Refactoring code based on feedback...")
+                refactor_prompt = f"""
+                Please refactor this code draft for '{filename}':
+                ---
+                {initial_code}
+                ---
+
+                Incorporate this feedback from the code review:
+                ---
+                {review_feedback}
+                ---
+                """
+                refactor_response = self.refactoring_agent.run(refactor_prompt)
+                final_code = self._extract_code(refactor_response.content)
+                if not final_code:
+                    raise ValueError("Refactoring agent failed to produce code.")
+                log_info("Refactoring complete.")
+
             return {
-                "status": "error",
-                "message": f"Error processing coding task: {str(e)}",
-                "code": "",
-                "analysis": "",
-                "tests": "",
-                "review": ""
+                "status": "success",
+                "output": f"Code robustly generated for {filename}.",
+                "filename": filename,
+                "generated_code": final_code,
             }
 
-    def _task_to_prompt(self, task: Dict[str, Any]) -> str:
-        """Convert a structured task to a natural language prompt."""
-        task_type = task.get('type', '')
-        language = task.get('language', 'python')
-        requirements = task.get('requirements', '')
-        existing_code = task.get('existing_code', '')
-        
-        if task_type == 'generate':
-            return f"""Generate {language} code for the following requirements:
-{requirements}
-
-Please include:
-1. Proper documentation
-2. Error handling
-3. Type hints
-4. Best practices
-"""
-        elif task_type == 'analyze':
-            return f"""Analyze this {language} code:
-{existing_code}
-
-Please provide:
-1. Code quality assessment
-2. Potential issues
-3. Improvement suggestions
-"""
-        elif task_type == 'test':
-            return f"""Generate tests for this {language} code:
-{existing_code}
-
-Please include:
-1. Unit tests
-2. Edge cases
-3. Integration tests if needed
-"""
-        elif task_type == 'review':
-            return f"""Review this {language} code:
-{existing_code}
-
-Please provide:
-1. Code review
-2. Security assessment
-3. Performance analysis
-4. Best practices check
-"""
-        
-        return json.dumps(task)  # Fallback to JSON representation    
-
-# coder_agent = CoderAgentNode()
-# coder_agent.run("check if cadquery python package is installed in the system if it's there then uninstall it")
+        except Exception as e:
+            log_info(f"A critical error occurred in the CoderAgentNode run method: {e}")
+            return {
+                "status": "error",
+                "error": str(e),
+                "generated_code": None,
+            }

@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>The Gourmet Haven</title>
+    <link rel="stylesheet" href="styles.css">
+    <meta name="description" content="Experience fine dining at The Gourmet Haven, where culinary excellence meets elegant atmosphere.">
+</head>
+<body>
+    <header id="header" role="banner">
+        <nav class="navbar" aria-label="main navigation" role="navigation">
+            <div class="logo">
+                <h1>The Gourmet Haven</h1>
+            </div>
+            <ul class="nav-links">
+                <li><a href="#home">Home</a></li>
+                <li><a href="#about">About</a></li>
+                <li><a href="#menu">Menu</a></li>
+                <li><a href="#contact">Contact</a></li>
+            </ul>
+        </nav>
+    </header>
+
+    <main role="main" aria-label="main content">
+        <section id="home" class="hero">
+            <div class="hero-content">
+                <h2>Welcome to The Gourmet Haven</h2>
+                <p>Experience culinary excellence in an elegant atmosphere</p>
+                <a href="#menu" class="cta-button" role="button">View Menu</a>
+            </div>
+            <div class="hero-image">
+                <img src="https://images.unsplash.com/photo-1505245208761-ba872912fac0?ixlib=rb-1.2.1&auto=format&fit=crop&w=1350&q=80" 
+                     alt="Fine dining" 
+                     loading="lazy"
+                     width="800"
+                     height="600">
+            </div>
+        </section>
+
+        <section id="about" class="about" aria-label="about section">
+            <div class="about-content">
+                <h2>About Us</h2>
+                <p>Since 2010, The Gourmet Haven has been providing exceptional dining experiences. Our chefs use only the freshest ingredients to create modern twists on classic dishes.</p>
+            </div>
+        </section>
+
+        <section id="menu" class="menu" aria-label="menu section">
+            <div class="menu-grid">
+                <div class="menu-item">
+                    <img src="https://images.unsplash.com/photo-1586444248902-2f64eddc13df?ixlib=rb-1.2.1&auto=format&fit=crop&w=1950&q=80" 
+                         alt="Starter" 
+                         loading="lazy"
+                         width="400"
+                         height="300">
+                    <h3>Seared Scallops</h3>
+                    <p>Fresh scallops seared to perfection with garlic butter and microgreens</p>
+                    <p class="price">$18</p>
+                </div>
+                <div class="menu-item">
+                    <img src="https://images.unsplash.com/photo-1578985545062-69928b1d9587?ixlib=rb-1.2.1&auto=format&fit=crop&w=1950&q=80" 
+                         alt="Main" 
+                         loading="lazy"
+                         width="400"
+                         height="300">
+                    <h3>Grass-fed Ribeye</h3>
+                    <p>24oz premium cut served with roasted vegetables and truffle mashed potatoes</p>
+                    <p class="price">$42</p>
+                </div>
+                <div class="menu-item">
+                    <img src="https://images.unsplash.com/photo-1557925923-cd4648e211a0?ixlib=rb-1.2.1&auto=format&fit=crop&w=1950&q=80" 
+                         alt="Dessert" 
+                         loading="lazy"
+                         width="400"
+                         height="300">
+                    <h3>Dark Chocolate Soufflé</h3>
+                    <p>Rich chocolate soufflé served with vanilla bean ice cream</p>
+                    <p class="price">$12</p>
+                </div>
+            </div>
+        </section>
+
+        <section id="contact" class="contact" aria-label="contact section">
+            <div class="contact-form">
+                <h2>Make a Reservation</h2>
+                <form action="/reserve" method="POST">
+                    <div class="form-group">
+                        <label for="name">Name:</label>
+                        <input type="text" id="name" name="name" placeholder="Name" required aria-required="true">
+                    </div>
+                    <div class="form-group">
+                        <label for="email">Email:</label>
+                        <input type="email" id="email" name="email" placeholder="Email" required aria-required="true">
+                    </div>
+                    <div class="form-group">
+                        <label for="date">Date:</label>
+                        <input type="date" id="date" name="date" placeholder="Date" required aria-required="true">
+                    </div>
+                    <div class="form-group">
+                        <label for="guests">Number of Guests:</label>
+                        <input type="number" id="guests" name="guests" placeholder="Number of Guests" required aria-required="true">
+                    </div>
+                    <button type="submit" role="button">Reserve Table</button>
+                </form>
+            </div>
+        </section>
+    </main>
+
+    <footer role="contentinfo" aria-label="footer">
+        <p>&copy; 2023 The Gourmet Haven. All rights reserved.</p>
+    </footer>
+
+    <script src="script.js"></script>
+</body>
+</html>
