@@ -1,11 +1,11 @@
 # Agents/human_intervention_agent.py
-# This is our safety net. When the system encounters an error it can't solve (like needing a password), it will call this agent to clearly explain the problem to you, the user.
 
 from agno.utils.log import log_info
 
 class HumanInterventionAgent:
+    """Handles situations where the agent system cannot proceed without user help."""
     def request_help(self, problem: str) -> str:
-        """Formats a clear help request for the user."""
+        """Formats a clear help request for the user and logs the event."""
         log_info("Requesting human intervention.")
         
         help_message = f"""

@@ -16,6 +16,8 @@ class SharedState:
         self.history: List[str] = []
         # --- NEW FLAG ---
         self.is_existing_project: bool = False
+        # --- NEW: Document content storage ---
+        self.document_content: Optional[str] = None
 
     def update_status(self, new_status: str):
         self.current_status = new_status
@@ -53,8 +55,16 @@ class SharedState:
 
     def add_to_history(self, message: str):
         self.history.append(message)
+    
+    # --- NEW METHOD ---
+    def set_document_content(self, content: str):
+        """Stores the content of a read document."""
+        self.document_content = content
+        self.add_to_history(f"Document content loaded into memory ({len(content)} chars).")
+
 
     def get_full_context(self) -> Dict[str, Any]:
+        """Returns the entire state as a dictionary for agents to use."""
         return {
             "original_task": self.original_task,
             "current_plan": self.current_plan,
@@ -62,6 +72,8 @@ class SharedState:
             "is_existing_project": self.is_existing_project,
             "created_files": self.created_files,
             "generated_code_keys": list(self.generated_code.keys()),
+            # --- NEW: Add document content to the context for the planner ---
+            "document_content": self.document_content,
             "last_execution_output": self.last_execution_output,
             "last_execution_error": self.last_execution_error,
             "current_status": self.current_status,
